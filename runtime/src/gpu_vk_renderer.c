@@ -2443,11 +2443,20 @@ static void depth24_clear_skipped_fb(void) {
 static void depth24_upload_policy(void) {
     int d24 = gpu_display_is_depth24();
     if (d24 && !s_depth24_skip_up) {
-        s_up_nrects = 0;
+        /* Entering 24-bit: land the queued 15-bit uploads first (ensure_cpu
+         * only flushes them when the GPU image is dirty), then sync the CPU
+         * mirror the movie frames are presented from, as the GL backend does. */
+        flush_cpu_upload();
+        ensure_cpu();
         rect_clear(&s_d24_skip_fb);
     } else if (!d24 && s_depth24_skip_up) {
-        s_up_nrects = 0;
+        /* Leaving 24-bit: texture and CLUT uploads made during the movie are
+         * still queued (the CPU present path never flushes them). Land them
+         * instead of dropping the queue: dropping it lost NSN2's title screen
+         * art and palette, loaded right after the intro movie, which then
+         * sampled white until the game reloaded it. Mirrors the GL backend. */
         depth24_clear_skipped_fb();
+        flush_cpu_upload();
         gpu_depth24_upload_span_reset();
     }
     s_depth24_skip_up = d24;
